@@ -13,6 +13,9 @@ my_app = AppService()
 TEAM_ID = int(os.environ['context.teamId'])
 WORKSPACE_ID = int(os.environ['context.workspaceId'])
 PROJECT_ID = int(os.environ['modal.state.slyProjectId'])
+DATASET_ID = os.environ['modal.state.slyDatasetId']
+if DATASET_ID is not None:
+    DATASET_ID = int(DATASET_ID)
 
 PASCAL_CONTOUR_THICKNESS = int(os.environ['modal.state.pascalContourThickness'])
 TRAIN_VAL_SPLIT_COEF = float(os.environ['modal.state.trainSplitCoef'])
@@ -43,7 +46,7 @@ VAL_TAG_NAME = 'val'
 SPLIT_TAGS = set([TRAIN_TAG_NAME, VAL_TAG_NAME])
 
 VALID_IMG_EXT = set(['.jpe', '.jpeg', '.jpg'])
-SUPPORTED_GEOMETRY_TYPES = set([sly.Bitmap, sly.Polygon])
+SUPPORTED_GEOMETRY_TYPES = set([sly.Bitmap, sly.Polygon, sly.Rectangle])
 
 if TRAIN_VAL_SPLIT_COEF > 1 or TRAIN_VAL_SPLIT_COEF < 0:
     raise ValueError('train_val_split_coef should be between 0 and 1, your data is {}'.format(TRAIN_VAL_SPLIT_COEF))
@@ -60,7 +63,7 @@ def from_ann_to_instance_mask(ann, mask_outpath, contour_thickness):
         label.geometry.draw(mask, label.obj_class.color)
 
     im = Image.fromarray(mask)
-    im = im.convert("P", palette=Image.ADAPTIVE)
+    im = im.convert("P", palette=Image.Palette.ADAPTIVE)
     im.save(mask_outpath)
 
 
@@ -78,7 +81,7 @@ def from_ann_to_class_mask(ann, mask_outpath, contour_thickness):
         label.geometry.draw(mask, new_color)
 
     im = Image.fromarray(mask)
-    im = im.convert("P", palette=Image.ADAPTIVE)
+    im = im.convert("P", palette=Image.Palette.ADAPTIVE)
     im.save(mask_outpath)
 
 
@@ -217,7 +220,12 @@ def from_sly_to_pascal(api: sly.Api, task_id, context, state, app_logger):
     images_stats = []
     classes_colors = {}
 
-    datasets = api.dataset.get_list(PROJECT_ID)
+    if DATASET_ID is not None:
+        dataset_info = api.dataset.get_info_by_id(DATASET_ID)
+        datasets = [dataset_info]
+    else:
+        datasets = api.dataset.get_list(PROJECT_ID)
+    
     dataset_names = ['trainval', 'val', 'train']
     progress = sly.Progress('Preparing images for export', api.project.get_images_count(PROJECT_ID), app_logger)
     for dataset in datasets:
@@ -329,7 +337,8 @@ def main():
     sly.logger.info("Script arguments", extra={
         "TEAM_ID": TEAM_ID,
         "WORKSPACE_ID": WORKSPACE_ID,
-        "PROJECT_ID": PROJECT_ID
+        "PROJECT_ID": PROJECT_ID,
+        "DATASET_ID": DATASET_ID
     })
 
     my_app.run(initial_events=[{"command": "from_sly_to_pascal"}])

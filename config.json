@@ -1,5 +1,5 @@
 {
-  "name": "Export to Pascal VOC",
+  "name": "Raven Export to Pascal VOC",
   "type": "app",
   "categories": [
     "images",
@@ -20,7 +20,8 @@
   "headless": true,
   "context_menu": {
     "target": [
-      "images_project"
+      "images_project",
+      "images_dataset"
     ],
     "context_root": "Download as"
   },
