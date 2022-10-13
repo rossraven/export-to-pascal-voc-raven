@@ -2,3 +2,4 @@
 /debug
 secret_debug.env
 .venv
+.vscode

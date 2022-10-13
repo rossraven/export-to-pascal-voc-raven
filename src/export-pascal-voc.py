@@ -1,4 +1,5 @@
 import os
+from matplotlib.patches import Rectangle
 import numpy as np
 import lxml.etree as ET
 import supervisely as sly
@@ -219,6 +220,7 @@ def from_sly_to_pascal(api: sly.Api, task_id, context, state, app_logger):
 
     images_stats = []
     classes_colors = {}
+    count = 0
 
     if DATASET_ID is not None:
         dataset_info = api.dataset.get_info_by_id(DATASET_ID)
@@ -226,8 +228,11 @@ def from_sly_to_pascal(api: sly.Api, task_id, context, state, app_logger):
     else:
         datasets = api.dataset.get_list(PROJECT_ID)
     
+    for ds in datasets:
+        count += ds.images_count
+    
     dataset_names = ['trainval', 'val', 'train']
-    progress = sly.Progress('Preparing images for export', api.project.get_images_count(PROJECT_ID), app_logger)
+    progress = sly.Progress('Preparing images for export', count, app_logger)
     for dataset in datasets:
         if dataset.name in dataset_names:
            is_trainval = 1
@@ -340,7 +345,7 @@ def main():
         "PROJECT_ID": PROJECT_ID,
         "DATASET_ID": DATASET_ID
     })
-
+    
     my_app.run(initial_events=[{"command": "from_sly_to_pascal"}])
 
 
