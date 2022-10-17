@@ -1,5 +1,4 @@
 import os
-from matplotlib.patches import Rectangle
 import numpy as np
 import lxml.etree as ET
 import supervisely as sly
@@ -347,7 +346,6 @@ def main():
     })
     
     my_app.run(initial_events=[{"command": "from_sly_to_pascal"}])
-
 
 if __name__ == '__main__':
     sly.main_wrapper("main", main)
