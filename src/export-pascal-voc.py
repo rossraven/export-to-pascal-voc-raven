@@ -244,7 +244,7 @@ def from_sly_to_pascal(api: sly.Api, task_id, context, state, app_logger):
             image_paths = [os.path.join(result_images_dir, image_info.name) for image_info in batch]
 
             api.image.download_paths(dataset.id, image_ids, image_paths)
-            ann_infos = api.annotation.download_batch(dataset.id, image_ids)
+            ann_infos = api.annotation.download_batch(dataset.id, image_ids,with_custom_data=True)
             for image_info, ann_info in zip(batch, ann_infos):
                 img_title, img_ext = os.path.splitext(image_info.name)
                 cur_img_filename = image_info.name
@@ -265,7 +265,9 @@ def from_sly_to_pascal(api: sly.Api, task_id, context, state, app_logger):
                     im = sly.image.read(orig_image_path)
                     sly.image.write(jpg_image_path, im)
                     sly.fs.silent_remove(orig_image_path)
-
+                if ann_info.annotation['customBigData'] is None:
+                    ann_info.annotation['customBigData'] = {}
+                    
                 ann = sly.Annotation.from_json(ann_info.annotation, meta)
                 tag = find_first_tag(ann.img_tags, SPLIT_TAGS)
                 if tag is not None:
