@@ -1,12 +1,9 @@
 import os
-import numpy as np
 import lxml.etree as ET
 import supervisely as sly
-from PIL import Image
 from shutil import copyfile
-from collections import OrderedDict
-from supervisely.imaging.color import generate_rgb
 from supervisely.app.v1.app_service import AppService
+from json2xml import json2xml
 
 my_app = AppService()
 
@@ -24,22 +21,17 @@ ARCHIVE_NAME_ENDING = '_pascal_voc.tar.gz'
 RESULT_DIR_NAME_ENDING = '_pascal_voc'
 RESULT_SUBDIR_NAME = 'VOCdevkit/VOC'
 
-images_dir_name = 'JPEGImages'
+images_dir_name = 'Images'
 ann_dir_name = 'Annotations'
-ann_class_dir_name = 'SegmentationClass'
-ann_obj_dir_name = 'SegmentationObject'
 
-trainval_sets_dir_name = 'ImageSets'
-trainval_sets_main_name = 'Main'
-trainval_sets_segm_name = 'Segmentation'
+trainval_sets_dir_name = 'train-val'
+trainval_sets_main_name = 'class-split'
+trainval_sets_segm_name = 'data-split'
 
 train_txt_name = 'train.txt'
 val_txt_name = 'val.txt'
 
 is_trainval = None
-
-pascal_contour_color = [224, 224, 192]
-pascal_ann_ext = '.png'
 
 TRAIN_TAG_NAME = 'train'
 VAL_TAG_NAME = 'val'
@@ -51,44 +43,9 @@ SUPPORTED_GEOMETRY_TYPES = set([sly.Bitmap, sly.Polygon, sly.Rectangle])
 if TRAIN_VAL_SPLIT_COEF > 1 or TRAIN_VAL_SPLIT_COEF < 0:
     raise ValueError('train_val_split_coef should be between 0 and 1, your data is {}'.format(TRAIN_VAL_SPLIT_COEF))
 
-
-def from_ann_to_instance_mask(ann, mask_outpath, contour_thickness):
-    mask = np.zeros((ann.img_size[0], ann.img_size[1], 3), dtype=np.uint8)
-    for label in ann.labels:
-        if label.obj_class.name == "neutral":
-            label.geometry.draw(mask, pascal_contour_color)
-            continue
-
-        label.geometry.draw_contour(mask, pascal_contour_color, contour_thickness)
-        label.geometry.draw(mask, label.obj_class.color)
-
-    im = Image.fromarray(mask)
-    im = im.convert("P", palette=Image.Palette.ADAPTIVE)
-    im.save(mask_outpath)
-
-
-def from_ann_to_class_mask(ann, mask_outpath, contour_thickness):
-    exist_colors = [[0, 0, 0], pascal_contour_color]
-    mask = np.zeros((ann.img_size[0], ann.img_size[1], 3), dtype=np.uint8)
-    for label in ann.labels:
-        if label.obj_class.name == "neutral":
-            label.geometry.draw(mask, pascal_contour_color)
-            continue
-
-        new_color = generate_rgb(exist_colors)
-        exist_colors.append(new_color)
-        label.geometry.draw_contour(mask, pascal_contour_color, contour_thickness)
-        label.geometry.draw(mask, new_color)
-
-    im = Image.fromarray(mask)
-    im = im.convert("P", palette=Image.Palette.ADAPTIVE)
-    im.save(mask_outpath)
-
-
 def ann_to_xml(project_info, image_info, img_filename, result_ann_dir, ann):
     xml_root = ET.Element("annotation")
 
-    ET.SubElement(xml_root, "folder").text = "VOC_" + project_info.name
     ET.SubElement(xml_root, "filename").text = img_filename
 
     xml_root_source = ET.SubElement(xml_root, "source")
@@ -123,7 +80,7 @@ def ann_to_xml(project_info, image_info, img_filename, result_ann_dir, ann):
 
     tree = ET.ElementTree(xml_root)
 
-    img_name = os.path.join(result_ann_dir, os.path.splitext(img_filename)[0] + ".xml")
+    img_name = os.path.join(result_ann_dir, img_filename + ".xml")
     ann_path = (os.path.join(result_ann_dir, img_name))
     ET.indent(tree, space="    ")
     tree.write(ann_path, pretty_print=True)
@@ -205,20 +162,15 @@ def from_sly_to_pascal(api: sly.Api, task_id, context, state, app_logger):
 
     result_ann_dir = os.path.join(result_subdir, ann_dir_name)
     result_images_dir = os.path.join(result_subdir, images_dir_name)
-    result_class_dir_name = os.path.join(result_subdir, ann_class_dir_name)
-    result_obj_dir = os.path.join(result_subdir, ann_obj_dir_name)
     result_imgsets_dir = os.path.join(result_subdir, trainval_sets_dir_name)
 
     sly.fs.mkdir(result_ann_dir)
     sly.fs.mkdir(result_imgsets_dir)
     sly.fs.mkdir(result_images_dir)
-    sly.fs.mkdir(result_class_dir_name)
-    sly.fs.mkdir(result_obj_dir)
 
     app_logger.info("Pascal VOC directories have been created")
 
     images_stats = []
-    classes_colors = {}
     count = 0
 
     if DATASET_ID is not None:
@@ -265,9 +217,17 @@ def from_sly_to_pascal(api: sly.Api, task_id, context, state, app_logger):
                     im = sly.image.read(orig_image_path)
                     sly.image.write(jpg_image_path, im)
                     sly.fs.silent_remove(orig_image_path)
-                if ann_info.annotation['customBigData'] is None:
+                
+                if ann_info.annotation['customBigData'] is not None:
+                    data = ann_info.annotation['customBigData']
+                    xml_ann = json2xml.Json2xml(data,root=False,item_wrap=False,attr_type=False).to_xml()
+                    img_name = os.path.join(result_ann_dir, cur_img_filename + ".xml")
+                    ann_path = (os.path.join(result_ann_dir, img_name))
+                    with open(ann_path,'w') as f: f.write(xml_ann)
+                    continue
+                else:
                     ann_info.annotation['customBigData'] = {}
-                    
+
                 ann = sly.Annotation.from_json(ann_info.annotation, meta)
                 tag = find_first_tag(ann.img_tags, SPLIT_TAGS)
                 if tag is not None:
@@ -285,28 +245,8 @@ def from_sly_to_pascal(api: sly.Api, task_id, context, state, app_logger):
                 ann_to_xml(project_info, image_info, cur_img_filename, result_ann_dir, ann)
                 for label in ann.labels:
                     cur_img_stats['classes'].add(label.obj_class.name)
-                    classes_colors[label.obj_class.name] = tuple(label.obj_class.color)
-
-                fake_contour_th = 0
-                if PASCAL_CONTOUR_THICKNESS != 0:
-                    fake_contour_th = 2 * PASCAL_CONTOUR_THICKNESS + 1
-
-                from_ann_to_instance_mask(ann, os.path.join(result_class_dir_name, img_title + pascal_ann_ext), fake_contour_th)
-                from_ann_to_class_mask(ann, os.path.join(result_obj_dir, img_title + pascal_ann_ext), fake_contour_th)
 
                 progress.iter_done_report()
-
-    classes_colors = OrderedDict((sorted(classes_colors.items(), key=lambda t: t[0])))
-
-    with open(os.path.join(result_subdir, "colors.txt"), "w") as cc:
-         if PASCAL_CONTOUR_THICKNESS != 0:
-            cc.write(f"neutral {pascal_contour_color[0]} {pascal_contour_color[1]} {pascal_contour_color[2]}\n")
-
-         for k in classes_colors.keys():
-             if k == 'neutral':
-                 continue
-
-             cc.write(f"{k} {classes_colors[k][0]} {classes_colors[k][1]} {classes_colors[k][2]}\n")
 
     imgs_to_split = [i for i in images_stats if i['dataset'] is None]
     train_len = int(len(imgs_to_split) * TRAIN_VAL_SPLIT_COEF)

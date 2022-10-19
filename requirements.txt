@@ -1,4 +1,4 @@
 supervisely==6.35.0
 lxml==4.6.3
-numpy>=1.19.4
 Pillow>=8.0.1
+json2xml==3.20.0
